@@ -1,0 +1,195 @@
+End-to-end Flow
+1) Dashboard: Inputs and Controls
+User opens the dashboard UI.
+
+Uploads:
+
+resume file (PDF/DOCX/TXT)
+
+connections.csv (must include at least: name, profile_url)
+
+Enters an additional instructions field (e.g., “friendly, concise, mention their recent post”).
+
+Enters AI API key (for Gemini or your chosen model).
+
+Clicks Start Automation.
+
+The UI shows a live log/status panel.
+
+2) Backend receives and initializes
+Saves the uploaded files locally (temporary working folder).
+
+Prepares an automation session:
+
+Loads the existing browser profile (so LinkedIn is already logged in).
+
+Launches the browser with headless=false to keep everything visible.
+
+Reads connections.csv into a queue (in memory).
+
+3) For each connection (sequential and visible)
+Opens the connection’s LinkedIn profile URL in a new tab.
+
+Waits for the page to load and extracts lightweight public details needed for personalization (e.g., name, headline, company—pulled from the page elements).
+
+Reads/parses the résumé content once (cached), and combines:
+
+résumé text
+
+profile snippet (name, headline, company, recent role if visible)
+
+additional instructions (tone/style)
+
+Sends a request to the AI API to generate a tailored message for this connection.
+
+Receives the tailored message.
+
+4) Prepare the message UI and give user control
+Clicks the “Message” button on the profile (or opens the message modal/side drawer).
+
+Pastes the tailored message into the message field (no auto-send yet).
+
+Starts a 5-second visible countdown timer shown in the dashboard log (and optionally on-screen overlay in the browser).
+
+During these 5 seconds, the user can:
+
+Let it auto-send after the countdown, or
+
+Manually cancel/stop from the dashboard (Pause/Stop button), or
+
+Edit the message text directly in the LinkedIn box before send.
+
+5) Sending and cleanup
+If not interrupted, the tool clicks the Send icon after 5 seconds.
+
+Waits for a quick confirmation (e.g., message field clears or a sent confirmation UI appears).
+
+Closes the current tab.
+
+Updates the dashboard log with “Sent to: {name}”.
+
+Removes the connection from the working list and writes back to connections.csv (or to a new “remaining_connections.csv”) so that the sent contact is not messaged again.
+
+6) Error handling and resilience
+If the AI API call fails: show an error in the dashboard and either retry once or skip to next profile (user-configurable).
+
+If the LinkedIn UI element isn’t found (UI changed/slow network): wait with a backoff and retry a couple times; otherwise, log and skip.
+
+If the user clicks Pause: finish the current step safely (don’t send) and hold.
+
+If the user clicks Stop: close any opened tab and end the session gracefully without sending.
+
+7) Logging and local storage
+Maintain a local log file (e.g., logs/session-YYYYMMDD-HHMM.txt) with timestamps for each step.
+
+Maintain an output CSV/JSON:
+
+connection name, profile_url, status (sent/skipped/failed), generated_message (for audit), timestamp.
+
+Maintain an updated connections file to avoid duplicates:
+
+Option A: Remove each processed row from the original CSV and rewrite it.
+
+Option B: Keep the original intact; write “remaining_connections.csv” for the next run and a “processed.csv” as history.
+
+Key Implementation Notes
+Browser behavior:
+
+Use a non-headless browser so the entire process is visible.
+
+Load the existing user profile directory so login persists (no password handling).
+
+Randomized but realistic delays between actions (e.g., 2–6s), plus the fixed 5s review window before sending.
+
+
+
+
+Résumé handling:
+
+Parse once at start. For PDFs/DOCX, extract text using a library and cache it.
+
+Sanitize and trim to stay within model token limits.
+
+AI prompt design:
+
+Include a structured prompt with:
+
+Role and context (who is the sender, what’s the purpose)
+
+Résumé summary
+
+Profile snippet (headline, company, recent role)
+
+Additional instructions (tone/style)
+
+Constraints (concise, respectful, no placeholders like {Name} if not present)
+
+Safety and platform considerations:
+
+Keep volume low and human-like pacing.
+
+Avoid scraping excessive data or sending bulk messages in short time windows.
+
+Ensure the user always has a Pause/Stop control.
+
+Example UI States
+Idle: “Ready. Upload files and click Start.”
+
+Running:
+
+“Opening profile: Jane Doe”
+
+“Generating tailored message…”
+
+“Preparing message box…”
+
+“Message ready. Auto-sending in 5s… Click Pause/Stop to cancel.”
+
+“Sent to Jane Doe”
+
+Paused: “Automation paused. Resume when ready.”
+
+Stopped: “Automation stopped. 12 remaining connections.”
+
+File lifecycle
+uploads/
+
+resume.txt (or extracted content cache)
+
+connections.csv (source)
+
+remaining_connections.csv (updated after each send)
+
+processed.csv (append-only log of completed)
+
+outputs/
+
+messages.jsonl (one line per connection with generated text)
+
+logs/session-*.txt
+
+Optional Enhancements
+Manual approve mode toggle:
+
+If ON: do not auto-send; wait for explicit “Send now” from dashboard.
+
+If OFF: auto-send after 5s if not interrupted.
+
+Per-connection edit:
+
+Show the generated message in the dashboard too, with an “Edit before paste” option.
+
+Rate control:
+
+Daily cap, interval ranges, cooldowns after N messages.
+
+This design gives full visibility and control to the user, keeps everything local, and avoids duplicates by updating the CSV as each contact is processed. If you want, the next step can be delivering production-grade code snippets for:
+
+React dashboard (form, status log, Start/Pause/Resume/Stop)
+
+Flask backend (file handling, session management, queue)
+
+Selenium controller (visible browser, tab handling, UI element selectors, 5s review window)
+
+AI client wrapper (prompting and retries)
+All of this can be implemented to run on a single machine.
